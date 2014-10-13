@@ -1,58 +1,78 @@
+// TODO - B2
+// TODO - debounce button
+var glob = require("glob");
 var SerialPort = require("serialport").SerialPort;
 var SonosDiscovery = require('sonos-discovery');
 
-var path = "/dev/tty.usbmodem1451";
-var serial = new SerialPort(path);
+glob("/dev/tty.usbmodem*", { nonull: true }, function(err, files) {
+  if(err) {
+    return console.error("No /dev/tty.usbmodem* file found :(")
+  }
+  if(files.length > 1) {
+    return console.error("Multiple /dev/tty.usbmodem files found! :(")
+  }
 
-serial.on('open', function() {
-  console.log('open!');
-  serial.on('data', function(data) {
+  var path = files[0];
+  console.log("Found serial device: ", path);
+
+  var serial = new SerialPort(path);
+
+  var maxVolume = 50;
+  var SonosDiscovery = require('sonos-discovery');
+  var discovery = new SonosDiscovery({ port: 5005, cacheDir: './cache' });
+  var player = discovery.getAnyPlayer();
+  discovery.on('group-volume', init);
+  console.log(discovery)
+
+  // Listen to the arduino serial connection input.
+  // We get messages in the form:
+  //
+  // V<num> - where num is between 0 and 100, and indicates the percent of volume.
+  //          We treat this as a percent of MaxVolume, as 100% volume on the sonos is
+  //          too loud, dawg.
+  // B1     - button 1 was pressed.  Treat this as pause/play.
+  // B2     - button 2 was pressed.  Tread this as next track.
+  serial.on('open', function() {
+    serial.on('data', onSerialData)
+  })
+
+  function onSerialData(data) {
     data = String(data)
-    console.log('data:', data);
+    console.log(data)
+
     if(data[0] == 'V') {
       var percent = +data.slice(1) / 100;
-      var volume = 40 * percent
-      console.log( volume )
-      player.setVolume(volume);
-      //toggleVolume()
+      setVolume(maxVolume * percent);
     }
     if(data == "B1") {
-      togglePlay()
+      playOrPause()
     }
     if(data == "B2") {
-
+      nextTrack()
     }
-  });
-});
-
-function togglePlay() {
-  if (player.state.currentState == "PLAYING") {
-    player.pause();
-  } else {
-    player.play();
+    else {
+      console.log("What the bang?", data)
+    }
   }
-}
 
-var player;
-var vol = 4;
+  function init() {
+    player = discovery.getAnyPlayer();
+  }
 
-function init() {
-  player = discovery.getAnyPlayer();
-}
+  function setVolume(volume) {
+    player.setVolume(volume)
+  }
 
-function toggleVolume() {
-  vol = vol == 4 ? 40 : 4;
-  player.setVolume(vol);
-}
+  function playOrPause() {
+    if (player.state.currentState == "PLAYING") {
+      player.pause()
+    } else {
+      player.play()
+    }
+  }
 
-var SonosDiscovery = require('sonos-discovery');
-var discovery = new SonosDiscovery({ port: 5005, cacheDir: './cache' });
-var player = discovery.getAnyPlayer();
+  function nextTrack() {
 
+  }
 
-discovery.on('group-volume', init);
-
-
-
-console.log(discovery)
-
+});

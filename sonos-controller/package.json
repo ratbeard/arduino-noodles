@@ -4,6 +4,7 @@
   "description": "",
   "main": "serial.js",
   "dependencies": {
+    "glob": "^4.0.6",
     "serialport": "~1.4.6",
     "sonos": "~0.6.1",
     "sonos-discovery": "git+https://github.com/jishi/node-sonos-discovery.git#master"
