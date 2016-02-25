@@ -4,10 +4,11 @@
   "description": "",
   "main": "serial.js",
   "dependencies": {
+    "applescript": "^1.0.0",
+    "colors": "^1.1.2",
     "glob": "^4.5.3",
-    "serialport": "^1.4.10",
-    "sonos": "~0.6.1",
-    "sonos-discovery": "git+https://github.com/jishi/node-sonos-discovery.git#master"
+    "johnny-five": "^0.9.25",
+    "serialport": "^1.4.10"
   },
   "devDependencies": {},
   "scripts": {

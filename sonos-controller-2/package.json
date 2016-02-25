@@ -5,6 +5,7 @@
   "main": "serial.js",
   "dependencies": {
     "glob": "^4.5.3",
+    "johnny-five": "^0.9.20",
     "serialport": "^1.4.10",
     "sonos": "~0.6.1",
     "sonos-discovery": "git+https://github.com/jishi/node-sonos-discovery.git#master"
