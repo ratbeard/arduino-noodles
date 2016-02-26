@@ -13,12 +13,25 @@ var util = require('util');
 var applescript = require('applescript');
 
 var ratingPollDelay = 3 * 1000;
+var delayBetweenNoRatingBlinks = 30 * 1000;
+
+// DEV
+//ratingPollDelay = 1 * 1000;
+//delayBetweenNoRatingBlinks = 5 * 1000;
 
 var state = {
+  // itunes state
   currentTrack: {
     name: null,
     rating: null,
   },
+  isPlaying: null,
+  isPlayingLibrary: null,
+  isPaused: null,
+
+  // ROBOT state
+  isLedOn: null,
+  lastBlinkedForNoRatingAt: null,
 };
 
 function runApplescript(string, callback) {
@@ -50,18 +63,50 @@ function getCurrentTrack(callback) {
 }
 
 function pollCurrentTrack() {
-  getCurrentTrack(function (err, track) {
-    //console.log('[poll] callback - ', err, track);
-    if (err) {
-      turnLedOff();
+  runApplescript('tell application "iTunes" to get player state', function (err, playerState) {
+    state.isPlaying = (playerState === 'playing');
+
+    if (!state.isPlaying) {
+      state.isPlayingLibrary = false;
+
+      if (state.isLedOn) {
+        console.log('[poll] not playing, turning off');
+        turnLedOff();
+      }
       return;
     }
 
-    if (track.name !== state.currentTrack.name || track.rating !== state.currentTrack.rating) {
-      console.log('[poll] callback - TRACK CHANGED', track);
-      state.currentTrack = track;
-      updateLed();
-    }
+    getCurrentTrack(function (err, track) {
+      //console.log('[poll] callback - ', err, track);
+      if (err) {
+        console.log('[poll] got error getting track, not playing library')
+        state.isPlayingLibrary = false;
+        turnLedOff();
+        return;
+      }
+      state.isPlayingLibrary = true;
+
+      if (!state.isLedOn) {
+        console.log('[poll] led is off but playing now, turning on');
+        updateLed();
+      }
+
+
+      if (!state.currentTrack.rating) {
+        if ((Date.now() - state.lastBlinkedForNoRatingAt) > delayBetweenNoRatingBlinks) {
+          state.lastBlinkedForNoRatingAt = Date.now();
+          turnLedOff();
+          setTimeout(function () { turnLedOn(); }, 1000);
+        }
+      }
+
+      if (track.name !== state.currentTrack.name || track.rating !== state.currentTrack.rating) {
+        console.log('[poll] callback - TRACK CHANGED', track);
+        state.currentTrack = track;
+        turnLedOff();
+        setTimeout(function () { updateLed(); }, 1000);
+      }
+    });
   });
 }
 
@@ -160,51 +205,120 @@ function playUnratedPlaylist() {
   });
 }
 
+function setVolume(volume) {
+  runApplescript('tell application "iTunes" to set sound volume to ' + volume, function () {
+  });
+}
+
+
+
+function onButton1Pressed() {
+  if (state.isPlayingLibrary) {
+    bumpCurrentTrackRating(-1);
+  } else {
+    console.log("whatcha want me 2 do");
+  }
+}
+
+function onButton1Held() {
+  if (state.isPlayingLibrary) {
+    rateCurrentTrackLowAndSkip();
+  } else {
+    playUnratedPlaylist();
+  }
+}
+
+function onButton2Pressed() {
+  if (state.isPlayingLibrary) {
+    bumpCurrentTrackRating(1);
+  } else {
+    console.log("whatcha want me 2 do");
+  }
+}
+
+function onButton2Held() {
+  if (state.isPlayingLibrary) {
+    skipCurrentTrack();
+  } else {
+    skipCurrentTrack();
+  }
+}
+
+function onPotentiometerChanged(value) {
+  //console.log(value);
+  if (value === 0) {
+    pause();
+  } else if (state.isPaused) {
+    resume();
+  } else {
+    setVolume(value);
+  }
+}
+
+function pause() {
+  state.isPaused = true;
+  runApplescript('tell application "iTunes" to pause', function () {});
+}
+
+function resume() {
+  state.isPaused = false;
+  runApplescript('tell application "iTunes" to play', function () {});
+}
 
 //
-//
+// Heres where the ROBOT starts
 //
 var five = require("johnny-five");
 
-var board = new five.Board();
-var led, button1, button2, isHoldingButton1, isHoldingButton2;
+var board, led, button1, button2, potentiometer;
+var isHoldingButton1, isHoldingButton2;
 
+board = new five.Board();
 board.on("ready", onBoardReady);
+
 board.on("close", function() {
+  console.log('[board] close() callback');
   process.exit();
 });
 
 function onBoardReady() {
-  console.log('[board] ready() callback - ');
+  console.log('[board] ready() callback');
 
   led = new five.Led.RGB({
-    pins: { red: 9, green: 10, blue: 11 }
+    pins: [9, 10, 11],
   });
+  led.intensity(15);
+
+  // 0 - 1023
+  potentiometer = new five.Sensor({
+    pin: 'A0',
+    threshold: 1024 / 100,
+    freq: 250,
+  });
+  potentiometer.scale(0, 80); // The max volume we want to go to in itunes
+  potentiometer.on("change", function(median) {
+    //console.log('[board] potentiometer changed!', this.value, this.raw);
+    onPotentiometerChanged(this.value);
+  });
+
   button1 = new five.Button({ pin: 1, invert: true });
   button2 = new five.Button({ pin: 4, invert: true });
 
-  //button1.on("release", function() {
-    //console.log( "Button released" );
-  //});
-
   button1.on("release", function() {
-    console.log( "Button 1 pressed" );
     if (isHoldingButton1) {
-      rateCurrentTrackLowAndSkip();
       isHoldingButton1 = false;
+      onButton1Held();
     } else {
-      bumpCurrentTrackRating(-1);
+      onButton1Pressed();
     }
   });
-
   button2.on("release", function() {
     console.log( "Button 2 pressed" );
     if (isHoldingButton2) {
-      //playUnratedPlaylist();
-      skipCurrentTrack();
       isHoldingButton2 = false;
+      onButton2Held();
     } else {
-      bumpCurrentTrackRating(1);
+      onButton2Pressed();
     }
   });
 
@@ -218,11 +332,14 @@ function onBoardReady() {
     isHoldingButton2 = true;
   });
 
+  // Start up
   pollCurrentTrack();
   setInterval(pollCurrentTrack, ratingPollDelay);
 
   board.repl.inject({
     led: led,
+    l: led,
+    p: potentiometer,
   });
 }
 
@@ -232,65 +349,20 @@ function setLedColor(color) {
     return;
   }
   console.log('setLedColor() - setting', color);
-  led.on();
+  turnLedOn();
   led.color(color);
 }
 
+function turnLedOn() {
+  state.isLedOn = true;
+  led.on();
+}
+
 function turnLedOff() {
+  state.isLedOn = false;
   if (!led) {
     return;
   }
   led.off();
 }
-
-
-
-//var glob = require("glob");
-//var SerialPort = require("serialport").SerialPort;
-
-//var files = glob.sync("/dev/tty.usbmodem*", { nonull: true });
-
-//if(files.length < 1) {
-  //return console.error("No /dev/tty.usbmodem files found! :(")
-//}
-//if(files.length > 1) {
-  //return console.error("Multiple /dev/tty.usbmodem files found! :(")
-//}
-
-//var path = files[0];
-//console.log("Found serial device: ", path);
-
-//var serial = new SerialPort(path);
-
-//// Listen to the arduino serial connection input.
-//// We get messages in the form:
-////
-//// V<num> - where num is between 0 and 100, and indicates the percent of volume.
-////          We treat this as a percent of MaxVolume, as 100% volume on the sonos is
-////          too loud, dawg.
-//// B1     - button 1 was pressed.  Treat this as pause/play.
-//// B2     - button 2 was pressed.  Tread this as next track.
-//serial.on('open', function() {
-  //serial.on('data', onSerialData)
-//})
-
-//function onSerialData(data) {
-  //data = String(data)
-  //console.log("Read: ", data)
-
-  //if(data[0] == 'V') {
-    //var percent = +data.slice(1) / 100;
-    //console.log(percent);
-  //}
-  //else if(data == "B1") {
-    //console.log('button 1')
-  //}
-  //else if(data == "B2") {
-    //console.log('button 2')
-  //}
-  //else {
-    //console.log("What the bang?", data)
-  //}
-//}
-
 
