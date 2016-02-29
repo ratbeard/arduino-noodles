@@ -13,11 +13,9 @@ var util = require('util');
 var applescript = require('applescript');
 
 var ratingPollDelay = 3 * 1000;
-var delayBetweenNoRatingBlinks = 30 * 1000;
 
 // DEV
 //ratingPollDelay = 1 * 1000;
-//delayBetweenNoRatingBlinks = 5 * 1000;
 
 var state = {
   // itunes state
@@ -32,10 +30,11 @@ var state = {
   // ROBOT state
   isLedOn: null,
   lastBlinkedForNoRatingAt: null,
+  isNoRatingLedBlinking: null,
 };
 
 function runApplescript(string, callback) {
-  var log = 1;
+  var log = 0;
   if (log) console.log('[]', string);
   applescript.execString(string, function (err, result) {
     if (err) {
@@ -73,13 +72,18 @@ function pollCurrentTrack() {
         console.log('[poll] not playing, turning off');
         turnLedOff();
       }
+      if (state.isNoRatingLedBlinking) {
+        state.isNoRatingLedBlinking = false;
+        led1.stop().off();
+      }
+
       return;
     }
 
     getCurrentTrack(function (err, track) {
       //console.log('[poll] callback - ', err, track);
       if (err) {
-        console.log('[poll] got error getting track, not playing library')
+        console.log('[poll] got error getting track, not playing library');
         state.isPlayingLibrary = false;
         turnLedOff();
         return;
@@ -87,17 +91,17 @@ function pollCurrentTrack() {
       state.isPlayingLibrary = true;
 
       if (!state.isLedOn) {
-        console.log('[poll] led is off but playing now, turning on');
+        console.log('[poll] rgbLed is off but playing now, turning on');
         updateLed();
       }
 
 
-      if (!state.currentTrack.rating) {
-        if ((Date.now() - state.lastBlinkedForNoRatingAt) > delayBetweenNoRatingBlinks) {
-          state.lastBlinkedForNoRatingAt = Date.now();
-          turnLedOff();
-          setTimeout(function () { turnLedOn(); }, 1000);
-        }
+      if (!state.currentTrack.rating && !state.isNoRatingLedBlinking && state.isPlayingLibrary) {
+        state.isNoRatingLedBlinking = true;
+        led1.blink(500);
+      } else if (state.currentTrack.rating && state.isNoRatingLedBlinking) {
+        state.isNoRatingLedBlinking = false;
+        led1.stop().off();
       }
 
       if (track.name !== state.currentTrack.name || track.rating !== state.currentTrack.rating) {
@@ -270,7 +274,7 @@ function resume() {
 //
 var five = require("johnny-five");
 
-var board, led, button1, button2, potentiometer;
+var board, rgbLed, led1, led2, led3, led4, button1, button2, potentiometer;
 var isHoldingButton1, isHoldingButton2;
 
 board = new five.Board();
@@ -284,10 +288,14 @@ board.on("close", function() {
 function onBoardReady() {
   console.log('[board] ready() callback');
 
-  led = new five.Led.RGB({
+  led1 = new five.Led({ pin: 6 });
+  led2 = new five.Led({ pin: 7 });
+  led3 = new five.Led({ pin: 8 });
+  led4 = new five.Led({ pin: 13 });
+  rgbLed = new five.Led.RGB({
     pins: [9, 10, 11],
   });
-  led.intensity(15);
+  rgbLed.intensity(15);
 
   // 0 - 1023
   potentiometer = new five.Sensor({
@@ -337,32 +345,43 @@ function onBoardReady() {
   setInterval(pollCurrentTrack, ratingPollDelay);
 
   board.repl.inject({
-    led: led,
-    l: led,
+    l: rgbLed, l1: led1, l2: led2, l3: led3, l4: led4,
     p: potentiometer,
   });
 }
 
 function setLedColor(color) {
-  if (!led) {
-    console.log('setLedColor() - no led');
+  if (!rgbLed) {
+    console.log('setLedColor() - no rgbLed');
     return;
   }
   console.log('setLedColor() - setting', color);
   turnLedOn();
-  led.color(color);
+  rgbLed.color(color);
 }
 
 function turnLedOn() {
   state.isLedOn = true;
-  led.on();
+  rgbLed.on();
 }
 
 function turnLedOff() {
   state.isLedOn = false;
-  if (!led) {
+  if (!rgbLed) {
     return;
   }
-  led.off();
+  rgbLed.off();
 }
 
+          //state.lastBlinkedForNoRatingAt = Date.now();
+          //var options = {
+            //duration: 1000,
+            //cuePoints: [0, .5, 1],
+            //metronomic: true,
+            //keyFrames: [0, 0xff, 0],
+            //easing: "inOutSine",
+          //};
+          //var a = new five.Animation(led1);
+          //a.enqueue(options);
+          //turnLedOff();
+          //setTimeout(function () { turnLedOn(); }, 1000);
