@@ -62,6 +62,11 @@ function getCurrentTrack(callback) {
 }
 
 function pollCurrentTrack() {
+  //console.log('polling')
+  //applescript.execFile("itunes-state.applescript", function (err, result) {
+    //console.log("XXX!", err, '|||', result)
+  //});
+
   runApplescript('tell application "iTunes" to get player state', function (err, playerState) {
     state.isPlaying = (playerState === 'playing');
 
