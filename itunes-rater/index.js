@@ -11,6 +11,11 @@
 require('colors');
 var util = require('util');
 var applescript = require('applescript');
+var open = require('open');
+var request = require('request');
+
+
+
 
 var ratingPollDelay = 3 * 1000;
 
@@ -219,9 +224,24 @@ function setVolume(volume) {
   });
 }
 
+//
+function openRapGeniusPage(songStr) {
+  var url = 'http://genius.com/search/quick.js?q=' + encodeURIComponent(songStr);
+  console.log('openRapGeniusPage() - searching for', songStr);
+
+  request.get(url, function (err, response, body) {
+    // Pull out the first url path in the results.  Each row looks like:
+    // Walkmen â€“ The Rat|/Walkmen-the-rat-lyrics|76235
+    var path = body.match(/\|(\/.*?)\|/)[1];
+    //console.log(path);
+    var url = 'http://genius.com' + path;
+    open(url);
+  });
+}
 
 
 function onButton1Pressed() {
+  console.log('onButton1Pressed');
   if (state.isPlayingLibrary) {
     bumpCurrentTrackRating(-1);
   } else {
@@ -230,6 +250,7 @@ function onButton1Pressed() {
 }
 
 function onButton1Held() {
+  console.log('onButton1Held');
   if (state.isPlayingLibrary) {
     rateCurrentTrackLowAndSkip();
   } else {
@@ -238,6 +259,7 @@ function onButton1Held() {
 }
 
 function onButton2Pressed() {
+  console.log('onButton2Pressed');
   if (state.isPlayingLibrary) {
     bumpCurrentTrackRating(1);
   } else {
@@ -246,11 +268,18 @@ function onButton2Pressed() {
 }
 
 function onButton2Held() {
+  console.log('onButton2Held');
   if (state.isPlayingLibrary) {
     skipCurrentTrack();
   } else {
     skipCurrentTrack();
   }
+}
+
+function onBothButtonsPressed() {
+  console.log('onBothButtonsPressed!!');
+  var songStr = "" + state.currentTrack.name;
+  openRapGeniusPage(songStr);
 }
 
 function onPotentiometerChanged(value) {
@@ -280,7 +309,7 @@ function resume() {
 var five = require("johnny-five");
 
 var board, rgbLed, led1, led2, led3, led4, button1, button2, potentiometer;
-var isHoldingButton1, isHoldingButton2;
+var didHoldButton1, didHoldButton2, didPressButton1, didPressButton2;
 
 board = new five.Board();
 board.on("ready", onBoardReady);
@@ -317,32 +346,58 @@ function onBoardReady() {
   button1 = new five.Button({ pin: 1, invert: true });
   button2 = new five.Button({ pin: 4, invert: true });
 
-  button1.on("release", function() {
-    if (isHoldingButton1) {
-      isHoldingButton1 = false;
-      onButton1Held();
-    } else {
-      onButton1Pressed();
+  var maybeHandleBothButtonsPressed = function () {
+    if (didPressButton1 && didPressButton2) {
+      // Clear state so we don't trigger the default actions.
+      didPressButton1 = false;
+      didPressButton2 = false;
+      didHoldButton1 = false;
+      didHoldButton2 = false;
+      onBothButtonsPressed();
     }
+  };
+
+  button1.on('press', function() {
+    didPressButton1 = true;
+    maybeHandleBothButtonsPressed();
   });
-  button2.on("release", function() {
-    console.log( "Button 2 pressed" );
-    if (isHoldingButton2) {
-      isHoldingButton2 = false;
-      onButton2Held();
-    } else {
-      onButton2Pressed();
-    }
+  button2.on('press', function() {
+    didPressButton2 = true;
+    maybeHandleBothButtonsPressed();
   });
 
   button1.on("hold", function() {
-    console.log( "Button 1 held" );
-    isHoldingButton1 = true;
+    if (didPressButton1) {
+      didHoldButton1 = true;
+    }
+  });
+  button2.on("hold", function() {
+    if (didPressButton2) {
+      didHoldButton2 = true;
+    }
   });
 
-  button2.on("hold", function() {
-    console.log( "Button 2 held" );
-    isHoldingButton2 = true;
+  button1.on("release", function() {
+    if (didHoldButton1) {
+      didHoldButton1 = false;
+      onButton1Held();
+    } else if (didPressButton1) {
+      didPressButton1 = false;
+      onButton1Pressed();
+    } else {
+      console.log('button1 released - doing nothing..');
+    }
+  });
+  button2.on("release", function() {
+    if (didHoldButton2) {
+      didHoldButton2 = false;
+      onButton2Held();
+    } else if (didPressButton2) {
+      didPressButton2 = false;
+      onButton2Pressed();
+    } else {
+      console.log('button2 released - doing nothing..');
+    }
   });
 
   // Start up

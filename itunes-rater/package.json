@@ -8,6 +8,8 @@
     "colors": "^1.1.2",
     "glob": "^4.5.3",
     "johnny-five": "^0.9.25",
+    "open": "0.0.5",
+    "request": "^2.69.0",
     "serialport": "^1.4.10"
   },
   "devDependencies": {},
